@@ -1,0 +1,52 @@
+{
+	"name": "@file-type/pdf",
+	"version": "0.1.0",
+	"description": "file-type plugin to parse PDF files",
+	"type": "module",
+	"exports": {
+		"default": "./parse.js"
+	},
+	"files": [
+		"lib/**/*.js",
+		"lib/**/*.d.ts"
+	],
+	"scripts": {
+		"clean": "del-cli lib/**/*.js lib/**/*.js.map lib/**/*.d.ts src/**/*.d.ts",
+		"compile": "tsc -p lib",
+		"build": "npm run clean && npm run compile",
+		"lint:ts": "biome check",
+		"test": "mocha",
+		"prepublishOnly": "npm run build",
+		"update-biome": "npm add -D --exact @biomejs/biome && npx @biomejs/biome migrate --write"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Borewit/file-type-pdf.git"
+	},
+	"keywords": [
+		"file-type",
+		"PDF",
+		"XMP"
+	],
+	"author": "Borewit",
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/Borewit/file-type-pdf/issues"
+	},
+	"homepage": "https://github.com/Borewit/file-type-pdf#readme",
+	"dependencies": {
+		"read-next-line": "^0.5.0",
+		"sax": "^1.4.1"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.3.10",
+		"@types/node": "^25.0.3",
+		"@types/sax": "^1.2.7",
+		"chai": "^6.2.2",
+		"del-cli": "^7.0.0",
+		"file-type": "^21.2.0",
+		"mocha": "^11.7.5",
+		"strtok3": "^10.3.4",
+		"typescript": "^5.9.3"
+	}
+}
