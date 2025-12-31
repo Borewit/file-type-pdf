@@ -4,7 +4,7 @@
 	"description": "file-type plugin to parse PDF files",
 	"type": "module",
 	"exports": {
-		"default": "./parse.js"
+		"default": "./lib/index.js"
 	},
 	"files": [
 		"lib/**/*.js",
@@ -28,7 +28,10 @@
 		"PDF",
 		"XMP"
 	],
-	"author": "Borewit",
+	"author": {
+		"name": "Borewit",
+		"url": "https://github.com/Borewit"
+	},
 	"license": "MIT",
 	"bugs": {
 		"url": "https://github.com/Borewit/file-type-pdf/issues"
