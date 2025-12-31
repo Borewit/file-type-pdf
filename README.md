@@ -11,11 +11,10 @@ This plugin goes beyond simple magic-number detection and can inspect the intern
 structure to distinguish between generic PDF files and specific producer formats such as
 **Adobe Illustrator (.ai)**.
 
-The detector is designed to be:
-- tokenizer-based (using `strtok3`)
-- streaming-friendly
-- safe to chain with other `file-type` detectors
-- compatible with both Node.js and browser environments
+## Scope
+
+This detector is designed for well-formed PDF files and established PDF-based subtypes.
+Support for corrupted or non-conforming PDFs is intentionally limited and only considered when a deviation is both common and widely accepted.
 
 ## Installation
 
