@@ -1,7 +1,8 @@
-import sax from "sax";
-import type { ITokenizer, IReadChunkOptions } from "strtok3";
+import sax from 'sax';
+import type { ITokenizer, IReadChunkOptions } from 'strtok3';
 import type { Detector, FileTypeResult } from 'file-type';
-import { PdfTokenizerReader } from "./PdfTokenizerReader.js";
+import { PdfTokenizerReader } from './PdfTokenizerReader.js';
+import { textDecode } from '@borewit/text-codec';
 
 type DictValue = true | string;
 type Dict = Record<string, DictValue>;
@@ -24,7 +25,6 @@ const PDF_TYPE: Readonly<FileTypeResult> = Object.freeze({ ext: "pdf", mime: "ap
 const AI_TYPE: Readonly<FileTypeResult> = Object.freeze({ ext: "ai", mime: "application/illustrator" });
 
 const encoder = new TextEncoder();
-const utf8Decoder = new TextDecoder("utf-8");
 
 function indexOfBytes(hay: Uint8Array, needle: Uint8Array): number {
 	if (needle.length === 0) return 0;
@@ -361,7 +361,7 @@ async function _detectPdf(
 			if (!rawBytes) break;
 
 			const decodedBytes = await decodeStreamBytes(objectInfo, rawBytes);
-			const streamText = utf8Decoder.decode(decodedBytes);
+			const streamText = textDecode(decodedBytes, 'ascii');
 
 			// Stream probes
 			for (const probe of subtypeProbes) {
