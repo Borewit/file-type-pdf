@@ -55,7 +55,7 @@
 		"@types/sax": "^1.2.7",
 		"chai": "^6.2.2",
 		"del-cli": "^7.0.0",
-		"file-type": "^21.2.0",
+		"file-type": "^21.3.0",
 		"mocha": "^11.7.5",
 		"strtok3": "^10.3.4",
 		"typescript": "^5.9.3"
