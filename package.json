@@ -1,6 +1,6 @@
 {
 	"name": "@file-type/pdf",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"description": "file-type plugin to parse PDF files",
 	"type": "module",
 	"exports": {
