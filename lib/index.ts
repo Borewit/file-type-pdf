@@ -1,5 +1,5 @@
 import sax from 'sax';
-import type { ITokenizer, IReadChunkOptions } from 'strtok3';
+import type { ITokenizer } from 'strtok3';
 import type { Detector, FileTypeResult } from 'file-type';
 import { PdfTokenizerReader } from './PdfTokenizerReader.js';
 import { textDecode } from '@borewit/text-codec';
@@ -24,52 +24,14 @@ const OBJ_REGEX = /^\s*(\d+)\s+(\d+)\s+obj\b/;
 const PDF_TYPE: Readonly<FileTypeResult> = Object.freeze({ ext: "pdf", mime: "application/pdf" });
 const AI_TYPE: Readonly<FileTypeResult> = Object.freeze({ ext: "ai", mime: "application/illustrator" });
 
-const encoder = new TextEncoder();
+/**
+ * Peeks the tokenizer, and returns true if magic signature is found.
+ */
+async function peekIsPdfHeader(tokenizer: ITokenizer): Promise<boolean> {
 
-function indexOfBytes(hay: Uint8Array, needle: Uint8Array): number {
-	if (needle.length === 0) return 0;
-	outer: for (let i = 0; i <= hay.length - needle.length; i++) {
-		for (let j = 0; j < needle.length; j++) {
-			if (hay[i + j] !== needle[j]) continue outer;
-		}
-		return i;
-	}
-	return -1;
-}
-
-async function peekPdfHeader(tokenizer: ITokenizer): Promise<{ isPdf: boolean; headerOffset: number }> {
-	const buf = new Uint8Array(1024);
-	let n = 0;
-
-	try {
-		const opts: IReadChunkOptions = { length: buf.length, mayBeLess: true };
-		n = await tokenizer.peekBuffer(buf, opts);
-	} catch {
-		return { isPdf: false, headerOffset: -1 };
-	}
-
-	if (!n) return { isPdf: false, headerOffset: -1 };
-
-	const hay = buf.subarray(0, n);
-	const idx = indexOfBytes(hay, encoder.encode("%PDF-"));
-	if (idx === -1) return { isPdf: false, headerOffset: -1 };
-
-	return { isPdf: true, headerOffset: idx };
-}
-
-async function skipBytes(tokenizer: ITokenizer, n: number): Promise<void> {
-	if (n <= 0) return;
-
-	const tmp = new Uint8Array(Math.min(64 * 1024, n));
-	let left = n;
-
-	while (left > 0) {
-		const len = Math.min(tmp.length, left);
-		const opts: IReadChunkOptions = { length: len };
-		const read = await tokenizer.readBuffer(tmp, opts);
-		if (!read) throw new Error("Unexpected EOF while skipping bytes");
-		left -= read;
-	}
+	const rawSignature = new Uint8Array(5);
+	return await tokenizer.peekBuffer(rawSignature, {mayBeLess: true}) === 5
+		&& textDecode(rawSignature, 'ascii') === '%PDF-';
 }
 
 function parseDictFromRaw(raw: string): Dict {
@@ -79,8 +41,7 @@ function parseDictFromRaw(raw: string): Dict {
 
 	while (match !== null) {
 		const key = match[1]!;
-		const value = match[2] ? match[2].trim() : true;
-		info[key] = value;
+		info[key] = match[2] ? match[2].trim() : true;
 
 		match = dictRegex.exec(raw);
 	}
@@ -266,12 +227,10 @@ async function _detectPdf(
 	const ctx: ProbeContext = { debug, log };
 
 	// NOT PDF => PEEK ONLY, do not advance
-	const { isPdf, headerOffset } = await peekPdfHeader(tokenizer);
-	if (!isPdf) return undefined;
+	if (!await peekIsPdfHeader(tokenizer)) return undefined;
 
 	// Confirmed PDF => ok to advance
-	log(`[PDF] Detected %PDF- header at +${headerOffset} (abs=${tokenizer.position + headerOffset})`);
-	if (headerOffset > 0) await skipBytes(tokenizer, headerOffset);
+	log(`[PDF] Detected %PDF- header at abs=${tokenizer.position}`);
 
 	const reader = new PdfTokenizerReader(tokenizer, { debug });
 
