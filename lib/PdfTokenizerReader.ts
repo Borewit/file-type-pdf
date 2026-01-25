@@ -33,8 +33,8 @@ export class PdfTokenizerReader {
 		return this.tokenizer.position - bufferedRemaining;
 	}
 
-	private async peekMayBeLess(target: Buffer, length: number): Promise<number> {
-		const opts: IReadChunkOptions = { length, mayBeLess: true };
+	private async peekMayBeLess(target: Buffer): Promise<number> {
+		const opts: IReadChunkOptions = { mayBeLess: true };
 		try {
 			return await this.tokenizer.peekBuffer(target, opts);
 		} catch (e: unknown) {
@@ -43,8 +43,8 @@ export class PdfTokenizerReader {
 		}
 	}
 
-	private async readMayBeLess(target: Buffer, length: number): Promise<number> {
-		const opts: IReadChunkOptions = { length, mayBeLess: true };
+	private async readMayBeLess(target: Buffer): Promise<number> {
+		const opts: IReadChunkOptions = { mayBeLess: true };
 		try {
 			return await this.tokenizer.readBuffer(target, opts);
 		} catch (e: unknown) {
@@ -68,7 +68,7 @@ export class PdfTokenizerReader {
 
 			// Peek first, then read exactly what we peeked
 			const peekBuf = Buffer.alloc(this.chunkSize);
-			const peeked = await this.peekMayBeLess(peekBuf, peekBuf.length);
+			const peeked = await this.peekMayBeLess(peekBuf);
 
 			if (!peeked) {
 				this.eof = true;
@@ -77,7 +77,7 @@ export class PdfTokenizerReader {
 			}
 
 			const readBuf = Buffer.alloc(peeked);
-			const read = await this.readMayBeLess(readBuf, readBuf.length);
+			const read = await this.readMayBeLess(readBuf);
 
 			if (!read) {
 				this.eof = true;
