@@ -27,6 +27,22 @@ type SubtypeProbe = {
 
 const OBJ_REGEX = /^\s*(\d+)\s+(\d+)\s+obj\b/;
 
+function isRecoverableXmlEntityError(error: unknown): boolean {
+	if (!(error instanceof Error)) return false;
+
+	// Keep matching tolerant across sax-js versions, but scoped to entity-related parse errors.
+	return /invalid\s+character\s+entity|entity.*not.*defined|undefined\s+entity/i.test(error.message);
+}
+
+function clearSaxParserErrorState(parser: sax.SAXParser): void {
+	// sax-js keeps an internal error latch that must be reset before resume().
+	(parser as unknown as {error: unknown}).error = null;
+}
+
+function restoreTokenizerPosition(tokenizer: ITokenizer, position: number): void {
+	(tokenizer as unknown as {position: number}).position = position;
+}
+
 const PDF_TYPE: Readonly<PdfTypeResult> = Object.freeze({ext: 'pdf', mime: 'application/pdf'});
 const PDFA_TYPE: Readonly<PdfTypeResult> = Object.freeze({ext: 'pdf', mime: 'application/pdf', archive: true});
 const AI_TYPE: Readonly<PdfTypeResult> = Object.freeze({ext: 'ai', mime: 'application/illustrator'});
@@ -35,7 +51,6 @@ const AI_TYPE: Readonly<PdfTypeResult> = Object.freeze({ext: 'ai', mime: 'applic
  * Peeks the tokenizer, and returns true if magic signature is found.
  */
 async function peekIsPdfHeader(tokenizer: ITokenizer): Promise<boolean> {
-
 	const rawSignature = new Uint8Array(5);
 	return await tokenizer.peekBuffer(rawSignature, {mayBeLess: true}) === 5
 		&& textDecode(rawSignature, 'ascii') === '%PDF-';
@@ -72,13 +87,11 @@ async function inflateFlateDecode(data: Uint8Array): Promise<Uint8Array> {
 }
 
 async function inflateWithFormat(format: 'deflate' | 'deflate-raw', data: Uint8Array): Promise<Uint8Array> {
-	// Normalize input so TS sees an ArrayBuffer-backed Uint8Array (not ArrayBufferLike/SharedArrayBuffer).
 	const normalized = new Uint8Array(data.byteLength);
 	normalized.set(data);
 
 	const ds = new DecompressionStream(format);
 
-	// Avoid DOM lib generic friction by keeping types permissive.
 	const input = new ReadableStream<any>({
 		start(controller) {
 			controller.enqueue(normalized);
@@ -102,7 +115,6 @@ async function decodeStreamBytes(objectInfo: Dict, rawBytes: Uint8Array): Promis
 		if (f === 'FlateDecode') {
 			out = await inflateFlateDecode(out);
 		} else {
-			// Unsupported filters, return raw stream
 			return rawBytes;
 		}
 	}
@@ -146,37 +158,35 @@ class XmlHandler {
 	} = {}) {
 		this.onCreatorTool = opts.onCreatorTool;
 		this.onPdfAIdPart = opts.onPdfAIdPart;
-		this.saxParser = sax.parser(true, { xmlns: true });
+		this.saxParser = sax.parser(true, {xmlns: true});
 
-		this.saxParser.onerror = (e: Error) => {
-			if (e.message.startsWith("Invalid character entity")) {
-				(this.saxParser as unknown as { error: unknown }).error = null;
+		this.saxParser.onerror = (error: unknown) => {
+			if (isRecoverableXmlEntityError(error)) {
+				clearSaxParserErrorState(this.saxParser);
 				this.saxParser.resume();
 				return;
 			}
-			throw e;
+
+			throw error instanceof Error ? error : new Error(String(error));
 		};
 
 		this.saxParser.onopentag = (node: unknown) => {
 			const tag = node as sax.QualifiedTag;
 
-			// xap:CreatorTool
 			const isCreatorTool =
 				tag.uri === 'http://ns.adobe.com/xap/1.0/' && tag.local === 'CreatorTool';
 
 			const nameCreatorTool =
-				typeof tag.name === 'string' &&
-				(tag.name === 'xap:CreatorTool' || tag.name.endsWith(':CreatorTool') || tag.name === 'CreatorTool');
+				typeof tag.name === 'string'
+				&& (tag.name === 'xap:CreatorTool' || tag.name.endsWith(':CreatorTool') || tag.name === 'CreatorTool');
 
 			this.readingCreatorTool = isCreatorTool || nameCreatorTool;
 
-			// pdfaid:part (PDF/A marker)
-			// Namespace: http://www.aiim.org/pdfa/ns/id/
 			const isPdfAIdPart =
 				tag.uri === 'http://www.aiim.org/pdfa/ns/id/' && tag.local === 'part';
 
 			const namePdfAIdPart =
-				typeof tag.name === 'string' && (tag.name === 'pdfaid:part' || tag.name === 'part');
+				typeof tag.name === 'string' && tag.name === 'pdfaid:part';
 
 			this.readingPdfAIdPart = isPdfAIdPart || namePdfAIdPart;
 		};
@@ -241,7 +251,7 @@ const subtypeProbes: SubtypeProbe[] = [createIllustratorProbe()];
  * File-type detector plugin:
  * - returns undefined if NOT a PDF (and does not advance tokenizer.position in that case)
  * - returns subtype result when a probe matches (e.g. AI_TYPE, PDFA_TYPE)
- * - returns PDF_TYPE for PDFs when no subtype match is found
+ * - returns undefined when no subtype match is found
  */
 async function _detectPdf(
 	tokenizer: ITokenizer,
@@ -249,6 +259,7 @@ async function _detectPdf(
 ): Promise<FileTypeResult | undefined> {
 	const maxScanLines = opts.maxScanLines ?? 50_000;
 	const ctx: ProbeContext = {log};
+	const startPosition = tokenizer.position;
 
 	if (!await peekIsPdfHeader(tokenizer)) return undefined;
 
@@ -268,12 +279,13 @@ async function _detectPdf(
 
 	const creatorToolListeners = subtypeProbes
 		.map(p => p.onCreatorTool)
-		.filter((fn): fn is NonNullable<SubtypeProbe["onCreatorTool"]> => typeof fn === "function");
+		.filter((fn): fn is NonNullable<SubtypeProbe['onCreatorTool']> => typeof fn === 'function');
 
-	log("[ROOT] Start parsing (PDF)");
+	log('[ROOT] Start parsing (PDF)');
 
 	let state = 0;
 	let scannedLines = 0;
+	let foundObject = false;
 
 	while (scannedLines++ < maxScanLines) {
 		const line = await readLine();
@@ -282,6 +294,7 @@ async function _detectPdf(
 		if (state === 0) {
 			const m = OBJ_REGEX.exec(line);
 			if (m) {
+				foundObject = true;
 				log(`Found object: ${m[1]} Generation: ${m[2]}`);
 				state = 10;
 			}
@@ -305,14 +318,12 @@ async function _detectPdf(
 
 			const objectInfo = parseDictFromRaw(dictText);
 
-			// Dict probes
 			for (const probe of subtypeProbes) {
 				if (!probe.onDict) continue;
 				const hit = probe.onDict(ctx, dictText, objectInfo);
 				if (hit) return hit;
 			}
 
-			// Stream check with pushback
 			let hasStream = streamInline;
 			if (!hasStream) {
 				const nextLine = await readLine();
@@ -327,7 +338,6 @@ async function _detectPdf(
 
 			if (!hasStream) continue;
 
-			// Length may be indirect like "12 0 R", skip if not numeric
 			const lenVal = objectInfo.Length;
 			if (!lenVal || lenVal === true) continue;
 
@@ -343,20 +353,18 @@ async function _detectPdf(
 			const decodedBytes = await decodeStreamBytes(objectInfo, rawBytes);
 			const streamText = textDecode(decodedBytes, 'utf-8');
 
-			// Stream probes
 			for (const probe of subtypeProbes) {
 				if (!probe.onStreamText) continue;
 				const hit = probe.onStreamText(ctx, streamText, objectInfo);
 				if (hit) return hit;
 			}
 
-			// XMP detection (CreatorTool + PDF/A)
 			const looksLikeXmp =
-				objectInfo.Type === 'Metadata' ||
-				objectInfo.Type === '/Metadata' ||
-				objectInfo.Subtype === 'XML' ||
-				objectInfo.Subtype === '/XML' ||
-				objectInfo.XML === true;
+				objectInfo.Type === 'Metadata'
+				|| objectInfo.Type === '/Metadata'
+				|| objectInfo.Subtype === 'XML'
+				|| objectInfo.Subtype === '/XML'
+				|| objectInfo.XML === true;
 
 			if (looksLikeXmp) {
 				log('[STREAM] XML metadata detected, feeding SAX');
@@ -380,12 +388,10 @@ async function _detectPdf(
 					xml.write(streamText);
 					xml.close();
 				} catch (e: unknown) {
-					// Preserve intentional subtype short-circuiting
-					if (e && typeof e === 'object' && 'ext' in e && 'mime' in e) {
+					if (e && typeof e === 'object' && e !== null && 'ext' in e && 'mime' in e) {
 						return e as PdfTypeResult;
 					}
 
-					// Ignore malformed XMP, metadata parsing is best-effort only.
 					log('[STREAM] Ignoring malformed XML metadata', e);
 				}
 			}
@@ -394,10 +400,15 @@ async function _detectPdf(
 	}
 
 	log('[ROOT] Done parsing (PDF)');
+	if (!foundObject) {
+		restoreTokenizerPosition(tokenizer, startPosition);
+		return undefined;
+	}
+
 	return PDF_TYPE;
 }
 
-export const detectPdf = {
+export const detectPdf: Detector = {
 	id: 'pdf',
 	detect: async (tokenizer: ITokenizer): Promise<PdfTypeResult | undefined> => _detectPdf(tokenizer),
-} satisfies Detector;
+};
