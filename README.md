@@ -38,10 +38,33 @@ const fileType = await parser.fromFile('example.pdf');
 console.log(fileType);
 ```
 
+## PDF/A detection
+
+When a PDF is identified as PDF/A (based on XMP metadata such as pdfaid:part),
+the detector returns a result that includes an additional flag:
+
+```ts
+  export interface PdfTypeResult extends FileTypeResult {
+  archive?: boolean;
+}
+```
+
+Example result for a PDF/A file:
+
+```js
+{
+  ext: 'pdf',
+  mime: 'application/pdf',
+  archive: true
+}
+```
+
+This allows consumers to distinguish **archival PDFs** from regular PDFs without introducing non-standard extensions or MIME types.
+
 ## Supported file formats
 
 - `.ai` / `application/illustrator`: Adobe Illustrator
-- `.pdf` / `application/pdf`: Generic Portable Document Format files
+- `.pdf` / `application/pdf`: Generic Portable Document Format files, including PDF/A (archival PDF)
 
 ## License
 
