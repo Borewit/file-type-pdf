@@ -14,17 +14,22 @@ type ProbeContext = {
 	log: (...args: unknown[]) => void;
 };
 
+export interface PdfTypeResult extends FileTypeResult {
+	archive?: boolean;
+}
+
 type SubtypeProbe = {
 	name: string;
-	onDict?: (ctx: ProbeContext, dictText: string, dict: Dict) => FileTypeResult | undefined;
-	onCreatorTool?: (ctx: ProbeContext, creatorTool: string) => FileTypeResult | undefined;
-	onStreamText?: (ctx: ProbeContext, streamText: string, objectInfo: Dict) => FileTypeResult | undefined;
+	onDict?: (ctx: ProbeContext, dictText: string, dict: Dict) => PdfTypeResult | undefined;
+	onCreatorTool?: (ctx: ProbeContext, creatorTool: string) => PdfTypeResult | undefined;
+	onStreamText?: (ctx: ProbeContext, streamText: string, objectInfo: Dict) => PdfTypeResult | undefined;
 };
 
 const OBJ_REGEX = /^\s*(\d+)\s+(\d+)\s+obj\b/;
 
-const PDF_TYPE: Readonly<FileTypeResult> = Object.freeze({ext: "pdf", mime: "application/pdf"});
-const AI_TYPE: Readonly<FileTypeResult> = Object.freeze({ext: "ai", mime: "application/illustrator"});
+const PDF_TYPE: Readonly<PdfTypeResult> = Object.freeze({ext: 'pdf', mime: 'application/pdf'});
+const PDFA_TYPE: Readonly<PdfTypeResult> = Object.freeze({ext: 'pdf', mime: 'application/pdf', archive: true});
+const AI_TYPE: Readonly<PdfTypeResult> = Object.freeze({ext: 'ai', mime: 'application/illustrator'});
 
 /**
  * Peeks the tokenizer, and returns true if magic signature is found.
@@ -39,6 +44,7 @@ async function peekIsPdfHeader(tokenizer: ITokenizer): Promise<boolean> {
 function parseDictFromRaw(raw: string): Dict {
 	const dictRegex = /\/(\w+)(?:\s+([^/>\n\r]+))?/g;
 	const info: Dict = {};
+
 	let match: RegExpExecArray | null = dictRegex.exec(raw);
 
 	while (match !== null) {
@@ -59,23 +65,23 @@ function normalizeFilters(filterValue: DictValue | undefined): string[] {
 
 async function inflateFlateDecode(data: Uint8Array): Promise<Uint8Array> {
 	try {
-		return await inflateWithFormat("deflate", data);
+		return await inflateWithFormat('deflate', data);
 	} catch {
-		return await inflateWithFormat("deflate-raw", data);
+		return await inflateWithFormat('deflate-raw', data);
 	}
 }
 
-async function inflateWithFormat(format: "deflate" | "deflate-raw", data: Uint8Array): Promise<Uint8Array> {
+async function inflateWithFormat(format: 'deflate' | 'deflate-raw', data: Uint8Array): Promise<Uint8Array> {
 	// Normalize input so TS sees an ArrayBuffer-backed Uint8Array (not ArrayBufferLike/SharedArrayBuffer).
 	const normalized = new Uint8Array(data.byteLength);
 	normalized.set(data);
 
 	const ds = new DecompressionStream(format);
 
-	// Use the most permissive stream element type and cast pipeThrough to avoid DOM lib generic friction.
+	// Avoid DOM lib generic friction by keeping types permissive.
 	const input = new ReadableStream<any>({
 		start(controller) {
-			controller.enqueue(normalized); // Uint8Array is a valid chunk at runtime
+			controller.enqueue(normalized);
 			controller.close();
 		},
 	});
@@ -93,7 +99,7 @@ async function decodeStreamBytes(objectInfo: Dict, rawBytes: Uint8Array): Promis
 	let out = rawBytes;
 
 	for (const f of filters) {
-		if (f === "FlateDecode") {
+		if (f === 'FlateDecode') {
 			out = await inflateFlateDecode(out);
 		} else {
 			// Unsupported filters, return raw stream
@@ -110,19 +116,19 @@ async function readDictionaryBlock(
 ): Promise<{ dictText: string | null; streamInline: boolean }> {
 	let raw = firstLine;
 
-	while (!raw.includes(">>")) {
+	while (!raw.includes('>>')) {
 		const next = await reader.readLine();
 		if (next === null) break;
 		raw += `\n${next}`;
 	}
 
-	const start = raw.indexOf("<<");
-	const end = raw.indexOf(">>", start + 2);
+	const start = raw.indexOf('<<');
+	const end = raw.indexOf('>>', start + 2);
 	if (start === -1 || end === -1) return {dictText: null, streamInline: false};
 
 	const dictText = raw.slice(start + 2, end).trim();
 	const after = raw.slice(end + 2).trim();
-	const streamInline = after === "stream" || after.startsWith("stream ");
+	const streamInline = after === 'stream' || after.startsWith('stream ');
 
 	return {dictText, streamInline};
 }
@@ -130,11 +136,17 @@ async function readDictionaryBlock(
 class XmlHandler {
 	private saxParser: sax.SAXParser;
 	private readingCreatorTool = false;
+	private readingPdfAIdPart = false;
 	private onCreatorTool?: (value: string) => void;
+	private onPdfAIdPart?: (value: string) => void;
 
-	constructor(opts: { onCreatorTool?: (value: string) => void } = {}) {
+	constructor(opts: {
+		onCreatorTool?: (value: string) => void;
+		onPdfAIdPart?: (value: string) => void;
+	} = {}) {
 		this.onCreatorTool = opts.onCreatorTool;
-		this.saxParser = sax.parser(true, {xmlns: true});
+		this.onPdfAIdPart = opts.onPdfAIdPart;
+		this.saxParser = sax.parser(true, { xmlns: true });
 
 		this.saxParser.onerror = (e: Error) => {
 			if (e.message.startsWith("Invalid character entity")) {
@@ -148,27 +160,42 @@ class XmlHandler {
 		this.saxParser.onopentag = (node: unknown) => {
 			const tag = node as sax.QualifiedTag;
 
+			// xap:CreatorTool
 			const isCreatorTool =
-				tag.uri === "http://ns.adobe.com/xap/1.0/" && tag.local === "CreatorTool";
+				tag.uri === 'http://ns.adobe.com/xap/1.0/' && tag.local === 'CreatorTool';
 
-			// Fallback by name, in case xmlns typing/runtime differs
-			const nameMatch =
-				typeof tag.name === "string" &&
-				(tag.name === "xap:CreatorTool" ||
-					tag.name.endsWith(":CreatorTool") ||
-					tag.name === "CreatorTool");
+			const nameCreatorTool =
+				typeof tag.name === 'string' &&
+				(tag.name === 'xap:CreatorTool' || tag.name.endsWith(':CreatorTool') || tag.name === 'CreatorTool');
 
-			this.readingCreatorTool = isCreatorTool || nameMatch;
+			this.readingCreatorTool = isCreatorTool || nameCreatorTool;
+
+			// pdfaid:part (PDF/A marker)
+			// Namespace: http://www.aiim.org/pdfa/ns/id/
+			const isPdfAIdPart =
+				tag.uri === 'http://www.aiim.org/pdfa/ns/id/' && tag.local === 'part';
+
+			const namePdfAIdPart =
+				typeof tag.name === 'string' && (tag.name === 'pdfaid:part' || tag.name === 'part');
+
+			this.readingPdfAIdPart = isPdfAIdPart || namePdfAIdPart;
 		};
 
 		this.saxParser.ontext = (text: string) => {
-			if (!this.readingCreatorTool) return;
-			this.onCreatorTool?.(text);
-			this.readingCreatorTool = false;
+			if (this.readingCreatorTool) {
+				this.onCreatorTool?.(text);
+				this.readingCreatorTool = false;
+			}
+
+			if (this.readingPdfAIdPart) {
+				this.onPdfAIdPart?.(text);
+				this.readingPdfAIdPart = false;
+			}
 		};
 
 		this.saxParser.onclosetag = () => {
 			this.readingCreatorTool = false;
+			this.readingPdfAIdPart = false;
 		};
 	}
 
@@ -183,26 +210,26 @@ class XmlHandler {
 
 function createIllustratorProbe(): SubtypeProbe {
 	return {
-		name: "adobe-illustrator",
+		name: 'adobe-illustrator',
 		onDict: (_ctx, dictText, dict) => {
 			if (dict.Illustrator === true) return AI_TYPE;
-			if (dictText.includes("/Illustrator")) return AI_TYPE;
+			if (dictText.includes('/Illustrator')) return AI_TYPE;
 
 			const creator = dict.Creator;
 			const producer = dict.Producer;
 
-			if (creator && creator !== true && String(creator).includes("Illustrator")) return AI_TYPE;
-			if (producer && producer !== true && String(producer).includes("Illustrator")) return AI_TYPE;
+			if (creator && creator !== true && String(creator).includes('Illustrator')) return AI_TYPE;
+			if (producer && producer !== true && String(producer).includes('Illustrator')) return AI_TYPE;
 
-			if (dictText.includes("Adobe Illustrator")) return AI_TYPE;
+			if (dictText.includes('Adobe Illustrator')) return AI_TYPE;
 			return undefined;
 		},
 		onCreatorTool: (_ctx, creatorTool) => {
-			if (creatorTool.toLowerCase().includes("illustrator")) return AI_TYPE;
+			if (creatorTool.toLowerCase().includes('illustrator')) return AI_TYPE;
 			return undefined;
 		},
 		onStreamText: (_ctx, streamText) => {
-			if (streamText.includes("Adobe Illustrator")) return AI_TYPE;
+			if (streamText.includes('Adobe Illustrator')) return AI_TYPE;
 			return undefined;
 		},
 	};
@@ -213,8 +240,8 @@ const subtypeProbes: SubtypeProbe[] = [createIllustratorProbe()];
 /**
  * File-type detector plugin:
  * - returns undefined if NOT a PDF (and does not advance tokenizer.position in that case)
- * - returns PDF_TYPE for PDF
- * - returns subtype result when a probe matches (e.g. AI_TYPE)
+ * - returns subtype result when a probe matches (e.g. AI_TYPE, PDFA_TYPE)
+ * - returns PDF_TYPE for PDFs when no subtype match is found
  */
 async function _detectPdf(
 	tokenizer: ITokenizer,
@@ -262,19 +289,19 @@ async function _detectPdf(
 		}
 
 		if (state === 10) {
-			if (line.trim() === "endobj") {
-				log("[OBJ] => [ROOT]");
+			if (line.trim() === 'endobj') {
+				log('[OBJ] => [ROOT]');
 				state = 0;
 				continue;
 			}
 
-			if (!line.includes("<<")) continue;
+			if (!line.includes('<<')) continue;
 
 			const {dictText, streamInline} = await readDictionaryBlock(reader, line);
 			if (!dictText) continue;
 
-			log(`[OBJ] Dictionary content: ${dictText.replace(/\s+/g, " ")}`);
-			log(streamInline ? "[OBJ] Stream keyword detected: stream" : "[OBJ] No stream keyword present on this line.");
+			log(`[OBJ] Dictionary content: ${dictText.replace(/\s+/g, ' ')}`);
+			log(streamInline ? '[OBJ] Stream keyword detected: stream' : '[OBJ] No stream keyword present on this line.');
 
 			const objectInfo = parseDictFromRaw(dictText);
 
@@ -291,7 +318,7 @@ async function _detectPdf(
 				const nextLine = await readLine();
 				if (nextLine === null) break;
 
-				if (nextLine.trim() === "stream") {
+				if (nextLine.trim() === 'stream') {
 					hasStream = true;
 				} else {
 					pendingLine = nextLine;
@@ -323,16 +350,16 @@ async function _detectPdf(
 				if (hit) return hit;
 			}
 
-			// XMP CreatorTool
+			// XMP detection (CreatorTool + PDF/A)
 			const looksLikeXmp =
-				objectInfo.Type === "Metadata" ||
-				objectInfo.Type === "/Metadata" ||
-				objectInfo.Subtype === "XML" ||
-				objectInfo.Subtype === "/XML" ||
+				objectInfo.Type === 'Metadata' ||
+				objectInfo.Type === '/Metadata' ||
+				objectInfo.Subtype === 'XML' ||
+				objectInfo.Subtype === '/XML' ||
 				objectInfo.XML === true;
 
-			if (looksLikeXmp && creatorToolListeners.length) {
-				log("[STREAM] XML metadata detected, feeding SAX");
+			if (looksLikeXmp) {
+				log('[STREAM] XML metadata detected, feeding SAX');
 
 				const xml = new XmlHandler({
 					onCreatorTool: (v: string) => {
@@ -342,30 +369,35 @@ async function _detectPdf(
 							if (hit) throw hit;
 						}
 					},
+					onPdfAIdPart: (v: string) => {
+						const part = v.trim();
+						log(`pdfaid:part=${part}`);
+						if (/^[1-4]$/.test(part)) throw PDFA_TYPE;
+					},
 				});
 
 				try {
 					xml.write(streamText);
 					xml.close();
 				} catch (e: unknown) {
-					if (e && typeof e === "object" && "ext" in e && "mime" in e) {
-						return e as FileTypeResult;
+					// Preserve intentional subtype short-circuiting
+					if (e && typeof e === 'object' && 'ext' in e && 'mime' in e) {
+						return e as PdfTypeResult;
 					}
-					throw e;
+
+					// Ignore malformed XMP, metadata parsing is best-effort only.
+					log('[STREAM] Ignoring malformed XML metadata', e);
 				}
 			}
-
-			log("[STREAM] => [OBJ]");
+			log('[STREAM] => [OBJ]');
 		}
 	}
 
-	log("[ROOT] Done parsing (PDF)");
+	log('[ROOT] Done parsing (PDF)');
 	return PDF_TYPE;
 }
 
-export const detectPdf: Detector = {
+export const detectPdf = {
 	id: 'pdf',
-	detect: async (tokenizer: ITokenizer): Promise<FileTypeResult | undefined> => {
-		return _detectPdf(tokenizer);
-	}
-};
+	detect: async (tokenizer: ITokenizer): Promise<PdfTypeResult | undefined> => _detectPdf(tokenizer),
+} satisfies Detector;
