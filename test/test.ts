@@ -33,7 +33,7 @@ describe('PDF detector', () => {
 		try {
 			const fileType = await detectPdf.detect(tokenizer);
 			assert.isUndefined(fileType);
-			assert.strictEqual(tokenizer.position, 0, 'position should be be advanced');
+			assert.strictEqual(tokenizer.position, 0, 'position should not be advanced');
 		} finally {
 			await tokenizer.close();
 		}
@@ -82,7 +82,7 @@ describe('PDF detector', () => {
 		}
 	});
 
-	it('should detect a concatenated PDF by its signature only', async () => {
+	it('does not detect a concatenated PDF by its signature only', async () => {
 		const buffer = new Uint8Array([
 			0x25, 0x50, 0x44, 0x46, 0x2D,
 			0x31, 0x2E, 0x31,
@@ -91,7 +91,18 @@ describe('PDF detector', () => {
 		const tokenizer = await fromBuffer(buffer);
 		try {
 			const result = await detectPdf.detect(tokenizer);
-			assert.deepEqual(result, {ext: 'pdf', mime: 'application/pdf'});
+			assert.deepEqual(result, undefined);
+		} finally {
+			await tokenizer.close();
+		}
+	});
+
+	it('should be able to detect PDF/A', async () => {
+		const samplePath = getSamplePath('archive.pdf');
+		const tokenizer = await fromFile(samplePath);
+		try {
+			const fileType = await detectPdf.detect(tokenizer);
+			assert.deepEqual(fileType, { ext: 'pdf', mime: 'application/pdf', archive: true });
 		} finally {
 			await tokenizer.close();
 		}
@@ -109,14 +120,27 @@ describe('PDF detector', () => {
 		}
 	});
 
-	it('should be able to detect PDF/A', async () => {
-		const samplePath = getSamplePath('archive.pdf');
+	it('should handle bad XML', async () => {
+		const samplePath = getSamplePath('file-type-pdf-issue-28-malformed-xmp.pdf');
 		const tokenizer = await fromFile(samplePath);
 		try {
 			const fileType = await detectPdf.detect(tokenizer);
-			assert.deepEqual(fileType, {ext: 'pdf', mime: 'application/pdf', archive: true});
+			assert.deepEqual(fileType, { ext: 'pdf', mime: 'application/pdf' });
 		} finally {
 			await tokenizer.close();
 		}
 	});
+
+	it('should ignore malformed XML entity in XMP metadata and still detect PDF', async () => {
+		const tokenizer = await fromFile(getSamplePath('malformed-xmp-entity.pdf'));
+		try {
+			const result = await detectPdf.detect(tokenizer);
+			assert.isDefined(result);
+			assert.strictEqual(result?.ext, 'pdf');
+			assert.strictEqual(result?.mime, 'application/pdf');
+		} finally {
+			await tokenizer.close();
+		}
+	});
+
 });

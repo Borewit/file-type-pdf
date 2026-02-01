@@ -1,0 +1,53 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [3 0 R] >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 131 >>
+stream
+BT /F1 18 Tf 72 720 Td (Issue #28 reproduction PDF) Tj ET
+BT /F1 11 Tf 72 700 Td (Valid PDF, malformed XMP metadata stream.) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Metadata /Subtype /XML /Length 489 >>
+stream
+<?xpacket begin="\xef\xbb\xbf" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <dc:title>
+        <rdf:Alt>
+          <rdf:li xml:lang="x-default">Malformed XMP sample</rdf:li>
+        </rdf:Alt>
+      </dc:title>
+      <dc:description>This tag is never closed properly
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000080 00000 n 
+0000000137 00000 n 
+0000000263 00000 n 
+0000000333 00000 n 
+0000000514 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+1084
+%%EOF
