@@ -1,9 +1,11 @@
 // PdfTokenizerReader.ts
-import type { ITokenizer, IReadChunkOptions } from "strtok3";
+import createDebug from 'debug';
+import type {ITokenizer, IReadChunkOptions} from "strtok3";
+
+const readerDebug = createDebug('file-type:pdf:reader');
 
 export type PdfTokenizerReaderOptions = {
 	chunkSize?: number;
-	debug?: boolean;
 };
 
 export class PdfTokenizerReader {
@@ -13,16 +15,16 @@ export class PdfTokenizerReader {
 
 	private chunkSize: number;
 	private eof = false;
-	private debug: boolean;
+	private logger: ReturnType<typeof createDebug>;
 
 	constructor(tokenizer: ITokenizer, opts: PdfTokenizerReaderOptions = {}) {
 		this.tokenizer = tokenizer;
 		this.chunkSize = opts.chunkSize ?? 64 * 1024;
-		this.debug = !!opts.debug;
+		this.logger = readerDebug.extend('stream');
 	}
 
 	private log(msg: string): void {
-		if (this.debug) console.log(msg);
+		this.logger(msg);
 	}
 
 	/**
@@ -34,7 +36,7 @@ export class PdfTokenizerReader {
 	}
 
 	private async peekMayBeLess(target: Buffer): Promise<number> {
-		const opts: IReadChunkOptions = { mayBeLess: true };
+		const opts: IReadChunkOptions = {mayBeLess: true};
 		try {
 			return await this.tokenizer.peekBuffer(target, opts);
 		} catch (e: unknown) {
@@ -44,7 +46,7 @@ export class PdfTokenizerReader {
 	}
 
 	private async readMayBeLess(target: Buffer): Promise<number> {
-		const opts: IReadChunkOptions = { mayBeLess: true };
+		const opts: IReadChunkOptions = {mayBeLess: true};
 		try {
 			return await this.tokenizer.readBuffer(target, opts);
 		} catch (e: unknown) {
