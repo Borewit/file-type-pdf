@@ -1,14 +1,16 @@
+import createDebug from 'debug';
 import sax from 'sax';
-import type { ITokenizer } from 'strtok3';
-import type { Detector, FileTypeResult } from 'file-type';
-import { PdfTokenizerReader } from './PdfTokenizerReader.js';
-import { textDecode } from '@borewit/text-codec';
+import type {ITokenizer} from 'strtok3';
+import type {Detector, FileTypeResult} from 'file-type';
+import {PdfTokenizerReader} from './PdfTokenizerReader.js';
+import {textDecode} from '@borewit/text-codec';
+
+const log = createDebug('file-type:pdf');
 
 type DictValue = true | string;
 type Dict = Record<string, DictValue>;
 
 type ProbeContext = {
-	debug: boolean;
 	log: (...args: unknown[]) => void;
 };
 
@@ -21,8 +23,8 @@ type SubtypeProbe = {
 
 const OBJ_REGEX = /^\s*(\d+)\s+(\d+)\s+obj\b/;
 
-const PDF_TYPE: Readonly<FileTypeResult> = Object.freeze({ ext: "pdf", mime: "application/pdf" });
-const AI_TYPE: Readonly<FileTypeResult> = Object.freeze({ ext: "ai", mime: "application/illustrator" });
+const PDF_TYPE: Readonly<FileTypeResult> = Object.freeze({ext: "pdf", mime: "application/pdf"});
+const AI_TYPE: Readonly<FileTypeResult> = Object.freeze({ext: "ai", mime: "application/illustrator"});
 
 /**
  * Peeks the tokenizer, and returns true if magic signature is found.
@@ -116,13 +118,13 @@ async function readDictionaryBlock(
 
 	const start = raw.indexOf("<<");
 	const end = raw.indexOf(">>", start + 2);
-	if (start === -1 || end === -1) return { dictText: null, streamInline: false };
+	if (start === -1 || end === -1) return {dictText: null, streamInline: false};
 
 	const dictText = raw.slice(start + 2, end).trim();
 	const after = raw.slice(end + 2).trim();
 	const streamInline = after === "stream" || after.startsWith("stream ");
 
-	return { dictText, streamInline };
+	return {dictText, streamInline};
 }
 
 class XmlHandler {
@@ -132,7 +134,7 @@ class XmlHandler {
 
 	constructor(opts: { onCreatorTool?: (value: string) => void } = {}) {
 		this.onCreatorTool = opts.onCreatorTool;
-		this.saxParser = sax.parser(true, { xmlns: true });
+		this.saxParser = sax.parser(true, {xmlns: true});
 
 		this.saxParser.onerror = (e: Error) => {
 			if (e.message.startsWith("Invalid character entity")) {
@@ -216,25 +218,17 @@ const subtypeProbes: SubtypeProbe[] = [createIllustratorProbe()];
  */
 async function _detectPdf(
 	tokenizer: ITokenizer,
-	opts: { debug?: boolean; maxScanLines?: number } = {}
+	opts: { maxScanLines?: number } = {}
 ): Promise<FileTypeResult | undefined> {
-	const debug = !!opts.debug;
 	const maxScanLines = opts.maxScanLines ?? 50_000;
+	const ctx: ProbeContext = {log};
 
-	const log = (...args: unknown[]) => {
-		if (debug) console.log(...args);
-	};
-	const ctx: ProbeContext = { debug, log };
-
-	// NOT PDF => PEEK ONLY, do not advance
 	if (!await peekIsPdfHeader(tokenizer)) return undefined;
 
-	// Confirmed PDF => ok to advance
 	log(`[PDF] Detected %PDF- header at abs=${tokenizer.position}`);
 
-	const reader = new PdfTokenizerReader(tokenizer, { debug });
+	const reader = new PdfTokenizerReader(tokenizer);
 
-	// pushback so we don't lose a line when probing for "stream"
 	let pendingLine: string | null = null;
 	const readLine = async (): Promise<string | null> => {
 		if (pendingLine !== null) {
@@ -251,7 +245,7 @@ async function _detectPdf(
 
 	log("[ROOT] Start parsing (PDF)");
 
-	let state = 0; // ROOT=0, OBJ=10
+	let state = 0;
 	let scannedLines = 0;
 
 	while (scannedLines++ < maxScanLines) {
@@ -276,7 +270,7 @@ async function _detectPdf(
 
 			if (!line.includes("<<")) continue;
 
-			const { dictText, streamInline } = await readDictionaryBlock(reader, line);
+			const {dictText, streamInline} = await readDictionaryBlock(reader, line);
 			if (!dictText) continue;
 
 			log(`[OBJ] Dictionary content: ${dictText.replace(/\s+/g, " ")}`);
@@ -371,7 +365,7 @@ async function _detectPdf(
 
 export const detectPdf: Detector = {
 	id: 'cfbf',
-	detect: async (tokenizer: ITokenizer):  Promise<FileTypeResult | undefined> => {
+	detect: async (tokenizer: ITokenizer): Promise<FileTypeResult | undefined> => {
 		return _detectPdf(tokenizer);
 	}
 };
