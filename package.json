@@ -11,7 +11,7 @@
 		"lib/**/*.d.ts"
 	],
 	"scripts": {
-		"clean": "del-cli lib/**/*.js lib/**/*.js.map lib/**/*.d.ts test/**/*.d.js test/**/*.d.ts",
+		"clean": "del-cli lib/**/*.js lib/**/*.js.map lib/**/*.d.ts test/**/*.d.js",
 		"compile": "tsc -p lib",
 		"build": "npm run clean && npm run compile",
 		"lint:ts": "biome check",
@@ -61,6 +61,7 @@
 		"file-type": "^21.3.0",
 		"mocha": "^11.7.5",
 		"strtok3": "^10.3.4",
+		"ts-node": "^10.9.2",
 		"typescript": "^5.9.3"
 	}
 }
