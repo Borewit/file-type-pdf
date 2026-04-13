@@ -11,7 +11,7 @@
 		"lib/**/*.d.ts"
 	],
 	"scripts": {
-		"clean": "del-cli lib/**/*.js lib/**/*.js.map lib/**/*.d.ts src/**/*.d.ts",
+		"clean": "del-cli lib/**/*.js lib/**/*.js.map lib/**/*.d.ts test/**/*.d.js test/**/*.d.ts",
 		"compile": "tsc -p lib",
 		"build": "npm run clean && npm run compile",
 		"lint:ts": "biome check",
