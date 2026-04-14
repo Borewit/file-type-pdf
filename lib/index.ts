@@ -364,7 +364,7 @@ async function _detectPdf(
 }
 
 export const detectPdf: Detector = {
-	id: 'cfbf',
+	id: 'pdf',
 	detect: async (tokenizer: ITokenizer): Promise<FileTypeResult | undefined> => {
 		return _detectPdf(tokenizer);
 	}
