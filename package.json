@@ -50,7 +50,7 @@
 		"@borewit/text-codec": "^0.2.2",
 		"debug": "^4.4.3",
 		"read-next-line": "^0.5.0",
-		"sax": "^1.4.4"
+		"sax": "^1.6.0"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.10",
