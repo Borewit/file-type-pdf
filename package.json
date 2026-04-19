@@ -56,7 +56,7 @@
 		"@biomejs/biome": "^2.4.12",
 		"@tokenizer/s3": "^1.0.2",
 		"@types/debug": "^4.1.13",
-		"@types/node": "^25.0.3",
+		"@types/node": "^25.6.0",
 		"@types/sax": "^1.2.7",
 		"chai": "^6.2.2",
 		"del-cli": "^7.0.0",
