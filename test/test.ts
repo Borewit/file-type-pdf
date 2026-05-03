@@ -2,7 +2,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {describe, it} from 'mocha';
 
-import {detectPdf} from '../lib/index.js';
+import {detectPdf, type PdfTypeResult} from '../lib/index.js';
 import {fromFile, fromBuffer} from 'strtok3';
 
 import {makeChunkedTokenizerFromS3} from '@tokenizer/s3';
@@ -101,7 +101,7 @@ describe('PDF detector', () => {
 		const samplePath = getSamplePath('archive.pdf');
 		const tokenizer = await fromFile(samplePath);
 		try {
-			const fileType = await detectPdf.detect(tokenizer);
+			const fileType = await detectPdf.detect(tokenizer) as PdfTypeResult;
 			assert.deepEqual(fileType, { ext: 'pdf', mime: 'application/pdf', archive: true });
 		} finally {
 			await tokenizer.close();
