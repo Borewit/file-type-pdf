@@ -2,8 +2,9 @@ import path from 'node:path';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {describe, it} from 'mocha';
+import type {S3Client} from '@aws-sdk/client-s3';
 
-import {detectPdf} from '../lib/index.js';
+import {detectPdf, type PdfTypeResult} from '../lib/index.js';
 import {fromBuffer, fromFile} from 'strtok3';
 
 import {makeChunkedTokenizerFromS3} from '@tokenizer/s3';
@@ -19,7 +20,7 @@ function getSamplePath(filename: string) {
 }
 
 async function makeS3Tokenizer(fixture: string) {
-	const s3Client = new MockS3Client();
+	const s3Client = new MockS3Client() as unknown as S3Client;
 
 	return makeChunkedTokenizerFromS3(s3Client, {
 		Bucket: 'mockup',
@@ -88,7 +89,7 @@ describe('PDF detector', () => {
 		const tokenizer = await fromFile(samplePath);
 		try {
 			const fileType = await detectPdf.detect(tokenizer);
-			assert.deepEqual(fileType, {ext: 'pdf', mime: 'application/pdf', archive: true});
+			assert.deepEqual(fileType as PdfTypeResult, {ext: 'pdf', mime: 'application/pdf', archive: true});
 		} finally {
 			await tokenizer.close();
 		}
