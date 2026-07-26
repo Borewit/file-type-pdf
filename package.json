@@ -51,7 +51,7 @@
 		"@tokenizer/s3": "^1.0.4",
 		"debug": "^4.4.3",
 		"read-next-line": "^0.5.0",
-		"sax": "^1.6.0"
+		"sax": "^1.6.1"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.14",
